@@ -412,7 +412,7 @@ impl Miner {
         let counters = Arc::new(Mutex::new(vec![0; self.worker_count]));
         let crackability = Arc::new(Mutex::new(std::f64::MAX));
         // Use the dummy essence and update in the mining_worker function
-        let best_essence = Arc::new(Mutex::new(self.essences_from_unsigned_bundle[0].clone()));
+        let best_essence = Arc::new(Mutex::new(self.essences_from_unsigned_bundle[1].clone()));
         let worker_count = self.worker_count;
         let offset = self.offset;
         let essences_from_unsigned_bundle = self.essences_from_unsigned_bundle[..].to_vec();
@@ -522,7 +522,7 @@ impl Miner {
             .unwrap();
         let mut abort_handles = Vec::new();
         let worker_count = self.worker_count;
-        let essences_from_unsigned_bundle = self.essences_from_unsigned_bundle[..].to_vec();
+        let essences_from_unsigned_bundle = self.essences_from_unsigned_bundle.to_vec();
         let mining_timeout = self.mining_timeout;
         let res = runtime
             .spawn(async move {
@@ -598,13 +598,11 @@ pub async fn mining_worker(
     best_essence: Arc<Mutex<TritBuf<T1B1Buf>>>,
     mut criterion: CrackProbabilityLessThanThreshold,
 ) -> Result<TritBuf<T1B1Buf>> {
-    let mut last_essence: TritBuf<T1B1Buf> = match essences.pop() {
-        Some(essence) => essence,
-        None => return Err(Error::EmptyEssenceToMine),
-    };
-    let kerl = prepare_keccak_384(&essences).await;
+    if essences.len() < 2 {
+        return Err(Error::EmptyEssenceToMine);
+    }
     let obselete_tag = create_obsolete_tag(increment, worker_id as i32).await;
-    last_essence = update_essense_with_new_obsolete_tag(last_essence, &obselete_tag).await;
+    essences[1] = update_essense_with_new_obsolete_tag(essences[1].clone(), &obselete_tag).await;
 
     // Note that we check the last essence with `zero` incresement first
     // While in the go-lang version the first checked essence hash `one` incresement
@@ -616,7 +614,7 @@ pub async fn mining_worker(
         };
         (*num)[worker_id] += 1;
     }
-    let mut mined_hash = absorb_and_get_normalized_bundle_hash(kerl.clone(), &last_essence).await;
+    let mut mined_hash = absorb_and_get_normalized_bundle_hash(&essences).await;
     while !criterion.judge(&mined_hash, &known_bundle_hashes)? {
         // Update current best crackability
         {
@@ -627,11 +625,11 @@ pub async fn mining_worker(
             if criterion.mined_crack_probability < *current_best_crackability {
                 *current_best_crackability = criterion.mined_crack_probability;
                 let mut current_best_essence = best_essence.lock().unwrap();
-                *current_best_essence = last_essence.clone();
+                *current_best_essence = essences[1].clone();
             }
         }
-        last_essence = increase_essense(last_essence).await?;
-        mined_hash = absorb_and_get_normalized_bundle_hash(kerl.clone(), &last_essence).await;
+        essences[1] = increase_essense(essences[1].clone()).await?;
+        mined_hash = absorb_and_get_normalized_bundle_hash(&essences).await;
         task::yield_now().await;
         // Update the counter
         {
@@ -648,10 +646,10 @@ pub async fn mining_worker(
         if criterion.mined_crack_probability < *current_best_crackability {
             *current_best_crackability = criterion.mined_crack_probability;
             let mut current_best_essence = best_essence.lock().unwrap();
-            *current_best_essence = last_essence.clone();
+            *current_best_essence = essences[1].clone();
         }
     }
-    Ok(last_essence)
+    Ok(essences[1].clone())
 }
 
 /// The mining worker, stop when timeout or the criterion is met
@@ -663,24 +661,22 @@ pub async fn mining_worker_with_non_crack_probability_stop_criteria(
     target_hash: TritBuf<T1B1Buf>,
     mut criterion: impl StopMiningCriteria,
 ) -> TritBuf<T1B1Buf> {
-    let mut last_essence: TritBuf<T1B1Buf> = essences.pop().unwrap();
-    let kerl = prepare_keccak_384(&essences).await;
     let obselete_tag = create_obsolete_tag(increment, worker_id as i32).await;
-    last_essence = update_essense_with_new_obsolete_tag(last_essence, &obselete_tag).await;
+    essences[1] = update_essense_with_new_obsolete_tag(essences[1].clone(), &obselete_tag).await;
 
     // Note that we check the last essence with `zero` incresement first
     // While in the go-lang version the first checked essence hash `one` incresement
-    let mut mined_hash = absorb_and_get_normalized_bundle_hash(kerl.clone(), &last_essence).await;
+    let mut mined_hash = absorb_and_get_normalized_bundle_hash(&essences).await;
     while !criterion
         .judge(&mined_hash, &vec![target_hash.clone()])
         .unwrap()
     {
-        last_essence = increase_essense(last_essence).await.unwrap();
+        essences[1] = increase_essense(essences[1].clone()).await.unwrap();
         task::yield_now().await;
-        mined_hash = absorb_and_get_normalized_bundle_hash(kerl.clone(), &last_essence).await;
+        mined_hash = absorb_and_get_normalized_bundle_hash(&essences).await;
         task::yield_now().await;
     }
-    last_essence
+    essences[1].clone()
 }
 
 /// Absorb the input essences and return the Kerl
@@ -695,10 +691,9 @@ pub async fn prepare_keccak_384(essences: &[TritBuf<T1B1Buf>]) -> Kerl {
 
 /// Use Kerl to absorbe the last essence, sqeeze, and output the normalized hash
 pub async fn absorb_and_get_normalized_bundle_hash(
-    mut kerl: Kerl,
-    last_essence: &TritBuf<T1B1Buf>,
+    essences: &Vec<TritBuf<T1B1Buf>>,
 ) -> TritBuf<T1B1Buf> {
-    async { kerl.absorb(last_essence.as_slice()).unwrap() }.await;
+    let mut kerl = prepare_keccak_384(&essences).await;
     task::yield_now().await;
     // Return hash
     async { normalize(&kerl.squeeze().unwrap()).unwrap() }.await

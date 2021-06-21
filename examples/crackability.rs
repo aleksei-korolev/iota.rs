@@ -16,17 +16,16 @@ use std::collections::HashMap;
 /// Migration example
 #[tokio::main]
 async fn main() -> Result<()> {
-    let security_level: u8 = 2;
+    let security_level: u8 = 3;
     let mut iota = iota::ClientBuilder::new()
-        .node("https://nodes-migration3-legacy.iota.cafe/")?
+        .node("https://nodes-migration5-legacy.iota.cafe/")?
         .quorum(true)
-        .permanode("http://permanode.migration3.iota.cafe:4000/api")?
+        .permanode("http://permanode.migration5.iota.cafe:4000/api")?
         .build()?;
     let tryte_seed = TernarySeed::from_trits(
         TryteBuf::try_from_str(
-            "VNRONDDCZLB9JZXFSCUPCMKBNDKJFLDTMYBURXWTG9RSDWZVYNUUEFSFNQZKSFRVJFNFNEMRFVZUSSVUW",
-            // "LIIWD9FVIOLNUESFRVJNMJALLNWBZPDRB9QSGYKYFJCUDADSWEUIPCYPBBBCWDPNIISLHGJNZAYTCQYXW",
-            // "STMILGEPNLFM9YPLGUM9RMPPZEJEMBKXUIDH9PVBTQDUPILKLNSPGXKUVDBIRPPBPUMWYBIUHEYNTZDUW",
+            "NEWMNLLNZKZLKQXYBXAUNTIWCKVHTKTKJBCNMHISFPCYLXGOHFPLMZN9NDTJMEQENVKGRLQRWHOPKUFKY",
+            // "TTKENVGAWIAJXYIUOQYRL9ZN9TUNISLMYVEEMJIYTUNAMEEANDIOSGZGDKWMQREJJWECWWHPALMODUQPY",
         )
         .unwrap()
         .as_trits()
@@ -72,10 +71,7 @@ async fn main() -> Result<()> {
 
     //Convert migraton address
     let new_address = ChrysalisAddress::try_from_bech32(bech32_address)?;
-    let new_converted_address = match new_address {
-        ChrysalisAddress::Ed25519(a) => a,
-        _ => panic!("Unsupported address type"),
-    };
+    let ChrysalisAddress::Ed25519(new_converted_address) = new_address;
 
     // Create bundle
     let mut prepared_bundle =
@@ -116,7 +112,7 @@ async fn main() -> Result<()> {
         .iter_trytes()
         .map(char::from)
         .collect::<String>();
-    println!("Bundle sent: {:?}", bundlehash);
+    println!("Bundle finished: {:?}", bundlehash);
     let hashes_trit_i8_test = spent_bundle_hashes
         .clone()
         .iter()

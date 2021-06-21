@@ -146,7 +146,7 @@ pub fn sign_migration_bundle(
     Ok(trytes)
 }
 
-/// mine a bundle essence to reveal as least new parts of the signature as possible
+/// mine a bundle essence to reveal as few new parts of the signature as possible
 pub async fn mine(
     prepared_bundle: OutgoingBundleBuilder,
     security_level: u8,
@@ -351,16 +351,16 @@ pub fn get_trytes_from_bundle(
 // Update latest tx essence with mined essence part
 fn update_essence_with_mined_essence(
     mut prepared_txs: Vec<BundledTransaction>,
-    latest_tx_essence_part: TritBuf<T1B1Buf>,
+    first_tx_essence_part: TritBuf<T1B1Buf>,
 ) -> Result<OutgoingBundleBuilder> {
-    // Replace obsolete tag of the last transaction with the mined obsolete_tag
+    // Replace obsolete tag of the first transaction with the mined obsolete_tag
     let mut trits = TritBuf::<T1B1Buf>::zeros(8019);
-    prepared_txs[prepared_txs.len() - 1].as_trits_allocated(trits.as_slice_mut());
+    prepared_txs[0].as_trits_allocated(trits.as_slice_mut());
     trits
         .subslice_mut(6804..7047)
-        .copy_from(&latest_tx_essence_part);
-    let tx_len = prepared_txs.len();
-    prepared_txs[tx_len - 1] = BundledTransaction::from_trits(&trits)?;
+        .copy_from(&first_tx_essence_part);
+
+    prepared_txs[0] = BundledTransaction::from_trits(&trits)?;
 
     // Create final bundle with updated obsolet_tag(mined essence part)
     let mut bundle = OutgoingBundleBuilder::default();
